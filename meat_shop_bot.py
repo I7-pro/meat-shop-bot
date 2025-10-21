@@ -4,10 +4,12 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes,
     CallbackQueryHandler, ConversationHandler, MessageHandler, filters
 )
+import os
 
 # === BOT MA'LUMOTLARI ===
-BOT_TOKEN = "8391288484:AAEKfIE8Ptr6OviApiVa7jaPlxUT6nzjriQ"  # Token
+BOT_TOKEN = "8391288484:AAEKfIE8Ptr6OviApiVa7jaPlxUT6nzjriQ"
 ADMIN_ID = 649076501  # Admin ID
+WEBHOOK_URL = "https://meat-shop-bot.onrender.com"  # ← bu joyga Render linkini qo'yasiz
 
 # === LOGGING ===
 logging.basicConfig(
@@ -15,7 +17,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# === MAHSULOTLAR RO‘YXATI (15 ta) ===
+# === MAHSULOTLAR ===
 PRODUCTS = {
     "qazi": {"name": "Qazi (dona)", "price": 180000, "img": "https://example.com/qazi.jpg"},
     "ot_tarash": {"name": "Qarta qazi (kg)", "price": 60000, "img": "https://example.com/otarash.jpg"},
@@ -35,7 +37,7 @@ PRODUCTS = {
 }
 
 # Savatcha
-SAVATCHA = {}
+CART = {}
 ASK_ADDRESS, ASK_PHONE = range(2)
 
 # === START ===
@@ -54,12 +56,12 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = []
     for i, (key, info) in enumerate(PRODUCTS.items(), start=1):
         row.append(InlineKeyboardButton(f"{info['name']} 🛒", callback_data=key))
-        if i % 3 == 0:  # har 3 tadan keyin yangi qatordan
+        if i % 3 == 0:
             keyboard.append(row)
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🛒 Savatchani ko‘rish", callback_data="savatcha")])
+    keyboard.append([InlineKeyboardButton("🛒 Savatchani ko‘rish", callback_data="cart")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Quyidagi mahsulotlardan tanlang:", reply_markup=reply_markup)
 
@@ -69,8 +71,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
 
-    if query.data == "savatcha":
-        await show_savatcha(update, context)
+    if query.data == "cart":
+        await show_cart(update, context)
         return
 
     item = PRODUCTS.get(query.data)
@@ -83,7 +85,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_photo(photo=item["img"], caption=caption, reply_markup=InlineKeyboardMarkup(keyboard))
 
 # === SAVATCHAGA QO‘SHISH ===
-async def add_to_savatcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -94,16 +96,16 @@ async def add_to_savatcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Mahsulot topilmadi ❌")
         return
 
-    SAVATCHA.setdefault(user_id, [])
-    SAVATCHA[user_id].append(item)
+    CART.setdefault(user_id, [])
+    CART[user_id].append(item)
     await query.message.reply_text(f"✅ {item['name']} savatchaga qo‘shildi!\n/menu yoki /savatcha ni bosing.")
 
 # === SAVATCHA ===
-async def show_savatcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     message = query.message if query else update.message
     user_id = update.effective_user.id
-    items = SAVATCHA.get(user_id, [])
+    items = CART.get(user_id, [])
 
     if not items:
         await message.reply_text("🛒 Savatchangiz hozircha bo‘sh. /menu orqali mahsulot tanlang.")
@@ -132,7 +134,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     phone = update.message.text
     address = context.user_data["address"]
-    items = SAVATCHA.get(user.id, [])
+    items = CART.get(user.id, [])
     total = sum(i["price"] for i in items)
 
     order_text = (
@@ -146,15 +148,13 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in items:
         order_text += f"- {i['name']} — {i['price']} so‘m\n"
 
-    # Adminga yuborish
     await context.bot.send_message(chat_id=ADMIN_ID, text=order_text)
-    # Foydalanuvchiga javob
     await update.message.reply_text("✅ Buyurtmangiz qabul qilindi!\nAdminimiz siz bilan tez orada bog‘lanadi 😊")
 
-    SAVATCHA[user.id] = []  # Savatchani tozalash
+    CART[user.id] = []
     return ConversationHandler.END
 
-# === ASOSIY QISM ===
+# === MAIN ===
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -169,15 +169,24 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu))
-    app.add_handler(CommandHandler("savatcha", show_savatcha))
+    app.add_handler(CommandHandler("savatcha", show_cart))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^(?!add_).+"))
-    app.add_handler(CallbackQueryHandler(add_to_savatcha, pattern="^add_"))
+    app.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_"))
     app.add_handler(conv_handler)
 
-    print("✅ Bot ishga tushdi. Telegram’da /start yozing.")
-    app.run_polling()
+    # Webhook ishlatish (409 xatolik chiqmasligi uchun)
+    import asyncio
+
+    async def run():
+        await app.bot.set_webhook(f"{WEBHOOK_URL}/{BOT_TOKEN}")
+        print("✅ Bot webhook orqali ishga tushdi.")
+        await app.start()
+        await app.updater.start_polling()
+        await asyncio.Event().wait()
+
+    import asyncio
+    asyncio.run(run())
 
 
 if __name__ == "__main__":
-    print("✅ Bot ishga tushdi. Telegram’da /start yozing.")
     main()
