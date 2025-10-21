@@ -1,23 +1,21 @@
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes,
-    CallbackQueryHandler, ConversationHandler, MessageHandler, filters
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from flask import Flask, request
+import logging
 import os
 
-# === BOT MA'LUMOTLARI ===
+# === Sozlamalar ===
 BOT_TOKEN = "8391288484:AAEKfIE8Ptr6OviApiVa7jaPlxUT6nzjriQ"
-ADMIN_ID = 649076501  # Admin ID
-WEBHOOK_URL = "https://meat-shop-bot.onrender.com"  # ← bu joyga Render linkini qo'yasiz
+ADMIN_ID = 649076501  # admin Telegram ID
+WEBHOOK_URL = "https://meatshopbot.onrender.com"  # o'zingizning Render link'ingiz
 
-# === LOGGING ===
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+# Flask ilovasi
+app = Flask(__name__)
 
-# === MAHSULOTLAR ===
+# Telegram Application
+application = Application.builder().token(BOT_TOKEN).build()
+
+# === Mahsulotlar ro'yxati (sizning variant) ===
 PRODUCTS = {
     "qazi": {"name": "Qazi (dona)", "price": 180000, "img": "https://example.com/qazi.jpg"},
     "ot_tarash": {"name": "Qarta qazi (kg)", "price": 60000, "img": "https://example.com/otarash.jpg"},
@@ -36,157 +34,80 @@ PRODUCTS = {
     "sosiska_kab": {"name": "Sasiska tovuq (kg)", "price": 70000, "img": "https://example.com/tovuq_sosiska.jpg"},
 }
 
-# Savatcha
-CART = {}
-ASK_ADDRESS, ASK_PHONE = range(2)
+# Har bir foydalanuvchining savatchasi
+cart = {}
 
-# === START ===
+# === Start komandasi ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "🫶 Assalomu alaykum!\n"
-        "Bizning go‘sht va fastfood do‘konimizga xush kelibsiz!\n\n"
-        "🍖 /menu - Mahsulotlar\n"
-        "🛒 /savatcha - Savatchani ko‘rish"
-    )
-    await update.message.reply_text(text)
-
-# === MENU ===
-async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     row = []
-    for i, (key, info) in enumerate(PRODUCTS.items(), start=1):
-        row.append(InlineKeyboardButton(f"{info['name']} 🛒", callback_data=key))
+    for i, (key, item) in enumerate(PRODUCTS.items(), 1):
+        row.append(InlineKeyboardButton(item["name"], callback_data=f"buy_{key}"))
         if i % 3 == 0:
             keyboard.append(row)
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🛒 Savatchani ko‘rish", callback_data="cart")])
+
+    keyboard.append([InlineKeyboardButton("🛒 Savatcha", callback_data="cart")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Quyidagi mahsulotlardan tanlang:", reply_markup=reply_markup)
 
-# === MENU CALLBACK ===
-async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Mahsulotni tanlang:", reply_markup=reply_markup)
+
+# === Tugmalarni qayta ishlash ===
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
     user_id = query.from_user.id
+    data = query.data
 
-    if query.data == "cart":
-        await show_cart(update, context)
-        return
+    if data.startswith("buy_"):
+        product_id = data[4:]
+        product = PRODUCTS[product_id]
+        cart.setdefault(user_id, []).append(product)
+        await query.message.reply_text(f"{product['name']} savatchaga qo‘shildi ✅")
 
-    item = PRODUCTS.get(query.data)
-    if not item:
-        await query.message.reply_text("Mahsulot topilmadi ❌")
-        return
+    elif data == "cart":
+        items = cart.get(user_id, [])
+        if not items:
+            await query.message.reply_text("Savatchangiz bo‘sh 🛒")
+            return
+        total = sum(p["price"] for p in items)
+        text = "\n".join([f"• {p['name']} - {p['price']} so'm" for p in items])
+        text += f"\n\nJami: {total} so'm"
+        keyboard = [[InlineKeyboardButton("📦 Buyurtma berish", callback_data="order")]]
+        await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-    caption = f"{item['name']}\nNarx: {item['price']} so‘m"
-    keyboard = [[InlineKeyboardButton("🛒 Savatchaga qo‘shish", callback_data=f"add_{query.data}")]]
-    await query.message.reply_photo(photo=item["img"], caption=caption, reply_markup=InlineKeyboardMarkup(keyboard))
+    elif data == "order":
+        items = cart.get(user_id, [])
+        total = sum(p["price"] for p in items)
+        text = "\n".join([f"{p['name']} - {p['price']} so'm" for p in items])
+        text += f"\n\nJami: {total} so'm"
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"🆕 Yangi buyurtma!\n\n{text}")
+        await query.message.reply_text("✅ Buyurtma qabul qilindi!\nAdmin siz bilan tez orada bog‘lanadi.")
+        cart[user_id] = []
 
-# === SAVATCHAGA QO‘SHISH ===
-async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    key = query.data.replace("add_", "")
-    item = PRODUCTS.get(key)
+# === Handlerlarni qo‘shish ===
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(button))
 
-    if not item:
-        await query.message.reply_text("Mahsulot topilmadi ❌")
-        return
+# === Flask webhook ===
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "ok"
 
-    CART.setdefault(user_id, [])
-    CART[user_id].append(item)
-    await query.message.reply_text(f"✅ {item['name']} savatchaga qo‘shildi!\n/menu yoki /savatcha ni bosing.")
-
-# === SAVATCHA ===
-async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    message = query.message if query else update.message
-    user_id = update.effective_user.id
-    items = CART.get(user_id, [])
-
-    if not items:
-        await message.reply_text("🛒 Savatchangiz hozircha bo‘sh. /menu orqali mahsulot tanlang.")
-        return
-
-    total = sum(i["price"] for i in items)
-    text = "\n".join([f"- {i['name']} — {i['price']} so‘m" for i in items])
-    text += f"\n\n💰 Jami: {total} so‘m"
-
-    keyboard = [[InlineKeyboardButton("✅ Buyurtma berish", callback_data="checkout")]]
-    await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
-# === BUYURTMA ===
-async def checkout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("📍 Iltimos, manzilingizni kiriting:")
-    return ASK_ADDRESS
-
-async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["address"] = update.message.text
-    await update.message.reply_text("📞 Telefon raqamingizni kiriting:")
-    return ASK_PHONE
-
-async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    phone = update.message.text
-    address = context.user_data["address"]
-    items = CART.get(user.id, [])
-    total = sum(i["price"] for i in items)
-
-    order_text = (
-        f"🆕 Yangi buyurtma!\n\n"
-        f"👤 Foydalanuvchi: {user.first_name} (@{user.username})\n"
-        f"📍 Manzil: {address}\n"
-        f"📞 Telefon: {phone}\n"
-        f"💰 Jami: {total} so‘m\n\n"
-        "🛒 Buyurtma tarkibi:\n"
-    )
-    for i in items:
-        order_text += f"- {i['name']} — {i['price']} so‘m\n"
-
-    await context.bot.send_message(chat_id=ADMIN_ID, text=order_text)
-    await update.message.reply_text("✅ Buyurtmangiz qabul qilindi!\nAdminimiz siz bilan tez orada bog‘lanadi 😊")
-
-    CART[user.id] = []
-    return ConversationHandler.END
-
-# === MAIN ===
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(checkout_callback, pattern="^checkout$")],
-        states={
-            ASK_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
-            ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-        },
-        fallbacks=[],
-    )
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("menu", menu))
-    app.add_handler(CommandHandler("savatcha", show_cart))
-    app.add_handler(CallbackQueryHandler(menu_callback, pattern="^(?!add_).+"))
-    app.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_"))
-    app.add_handler(conv_handler)
-
-    # Webhook ishlatish (409 xatolik chiqmasligi uchun)
-    import asyncio
-
-    async def run():
-        await app.bot.set_webhook(f"{WEBHOOK_URL}/{BOT_TOKEN}")
-        print("✅ Bot webhook orqali ishga tushdi.")
-        await app.start()
-        await app.updater.start_polling()
-        await asyncio.Event().wait()
-
-    import asyncio
-    asyncio.run(run())
-
+@app.route("/")
+def index():
+    return "Bot is running!"
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        url_path=BOT_TOKEN,
+        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    )
