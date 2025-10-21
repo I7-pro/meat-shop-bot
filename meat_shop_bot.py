@@ -1,77 +1,186 @@
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, ContextTypes,
+    CallbackQueryHandler, ConversationHandler, MessageHandler, filters
+)
 
-# === CONFIG ===
-TOKEN = "8391288484:AAEKfIE8Ptr6OviApiVa7jaPlxUT6nzjriQ"
-ADMIN_CHAT_ID = "649076501"  # O'zingning Telegram ID'ing
+# === BOT MA'LUMOTLARI ===
+BOT_TOKEN = "8391288484:AAEKfIE8Ptr6OviApiVa7jaPlxUT6nzjriQ"  # Token
+ADMIN_ID = 649076501  # Admin ID
 
-# === MAHSULOTLAR RO'YXATI ===
+# === LOGGING ===
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+
+# === MAHSULOTLAR RO‘YXATI (15 ta) ===
 PRODUCTS = {
-    "qazi": {"name": "Qazi (dona)", "price": 180000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/qazi.jpg"},
-    "go'sht": {"name": "Mol go‘shti (1kg)", "price": 95000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/gosht.jpg"},
-    "tovuq": {"name": "Tovuq (1kg)", "price": 55000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/tovuq.jpg"},
-    "kolbasa": {"name": "Kolbasa", "price": 28000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/kolbasa.jpg"},
-    "sosiska": {"name": "Sosiska", "price": 20000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/sosiska.jpg"},
-    "jigar": {"name": "Jigar (1kg)", "price": 35000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/jigar.jpg"},
-    "kabob": {"name": "Kabob", "price": 25000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/kabob.jpg"},
-    "steak": {"name": "Steyk", "price": 120000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/steak.jpg"},
-    "lahm": {"name": "Qo‘y go‘shti (1kg)", "price": 90000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/lahm.jpg"},
-    "pitsa": {"name": "Pitsa", "price": 70000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/pitsa.jpg"},
-    "burger": {"name": "Burger", "price": 45000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/burger.jpg"},
-    "shashlik": {"name": "Shashlik", "price": 40000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/shashlik.jpg"},
-    "lag'mon": {"name": "Lag‘mon", "price": 30000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/lagmon.jpg"},
-    "somsa": {"name": "Somsa", "price": 15000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/somsa.jpg"},
-    "manty": {"name": "Manti", "price": 25000, "img": "https://raw.githubusercontent.com/I7-pro/meat-shop-bot/main/images/manty.jpg"},
+    "qazi": {"name": "Qazi (dona)", "price": 180000, "img": "https://example.com/qazi.jpg"},
+    "ot_tarash": {"name": "Qarta qazi (kg)", "price": 60000, "img": "https://example.com/otarash.jpg"},
+    "toy_tarash": {"name": "Mol go'shti rulet (kg)", "price": 180000, "img": "https://example.com/toytarash.jpg"},
+    "til": {"name": "Til rulet (kg)", "price": 170000, "img": "https://example.com/til.jpg"},
+    "mix_rulet": {"name": "Miramir Mix rulet (kg)", "price": 140000, "img": "https://example.com/mix.jpg"},
+    "pay_rulet": {"name": "Qoy go'shti rulet (kg)", "price": 195000, "img": "https://example.com/pay.jpg"},
+    "indeyka_tovuq": {"name": "Tovuq rulet (kg)", "price": 90000, "img": "https://example.com/tovuq.jpg"},
+    "indeyka": {"name": "Indeyka qazi (kg)", "price": 120000, "img": "https://example.com/indeyka.jpg"},
+    "kab_kalbasa_yogsiz": {"name": "Kabcho'nniy kalbasa yog'siz (dona)", "price": 75000, "img": "https://example.com/yogsiz.jpg"},
+    "kab_kalbasa_yogli": {"name": "Kabcho'nniy kalbasa yog'li (dona)", "price": 60000, "img": "https://example.com/yogli.jpg"},
+    "var_kalbasa_yogli": {"name": "Varyonniy kalbasa yog'li (kg)", "price": 95000, "img": "https://example.com/varyogli.jpg"},
+    "var_kalbasa_yogsiz": {"name": "Varyonniy kalbasa yog'siz (kg)", "price": 20000, "img": "https://example.com/varyogsiz.jpg"},
+    "sasiska_quyon": {"name": "Sasiska quyon (kg)", "price": 115000, "img": "https://example.com/quyon.jpg"},
+    "sasiska": {"name": "Sasiska mol (kg)", "price": 90000, "img": "https://example.com/sasiska.jpg"},
+    "sosiska_kab": {"name": "Sasiska tovuq (kg)", "price": 70000, "img": "https://example.com/tovuq_sosiska.jpg"},
 }
 
-# === /start komandasi ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    buttons = [[InlineKeyboardButton(p["name"], callback_data=key)] for key, p in PRODUCTS.items()]
-    reply_markup = InlineKeyboardMarkup(buttons)
-    await update.message.reply_text("🍖 Assalomu alaykum! Mahsulotni tanlang:", reply_markup=reply_markup)
+# Savatcha
+CART = {}
+ASK_ADDRESS, ASK_PHONE = range(2)
 
-# === Mahsulot tanlanganda ===
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# === START ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "🫶 Assalomu alaykum!\n"
+        "Bizning go‘sht va fastfood do‘konimizga xush kelibsiz!\n\n"
+        "🍖 /menu - Mahsulotlar\n"
+        "🛒 /cart - Savatchani ko‘rish"
+    )
+    await update.message.reply_text(text)
+
+# === MENU ===
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = []
+    row = []
+    for i, (key, info) in enumerate(PRODUCTS.items(), start=1):
+        row.append(InlineKeyboardButton(f"{info['name']} 🛒", callback_data=key))
+        if i % 3 == 0:  # har 3 tadan keyin yangi qatordan
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("🛒 Savatchani ko‘rish", callback_data="cart")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Quyidagi mahsulotlardan tanlang:", reply_markup=reply_markup)
+
+# === MENU CALLBACK ===
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
 
-    product = PRODUCTS[query.data]
-    caption = f"📦 {product['name']}\n💰 Narxi: {product['price']} so‘m\n\n📲 Buyurtma berish uchun telefon raqamingizni yuboring."
-    context.user_data["selected_product"] = query.data
-
-    await query.message.reply_photo(photo=product["img"], caption=caption)
-
-# === Raqam qabul qilish ===
-async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    product_key = context.user_data.get("selected_product")
-    if not product_key:
-        await update.message.reply_text("Avval mahsulotni tanlang /start")
+    if query.data == "cart":
+        await show_cart(update, context)
         return
 
-    product = PRODUCTS[product_key]
-    phone = update.message.text.strip()
-    user = update.message.from_user
+    item = PRODUCTS.get(query.data)
+    if not item:
+        await query.message.reply_text("Mahsulot topilmadi ❌")
+        return
 
-    # Admin'ga yuboriladi
-    msg = (
-        f"📢 Yangi buyurtma!\n\n"
-        f"👤 Mijoz: {user.full_name}\n"
+    caption = f"{item['name']}\nNarx: {item['price']} so‘m"
+    keyboard = [[InlineKeyboardButton("🛒 Savatchaga qo‘shish", callback_data=f"add_{query.data}")]]
+    await query.message.reply_photo(photo=item["img"], caption=caption, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# === SAVATCHAGA QO‘SHISH ===
+async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    key = query.data.replace("add_", "")
+    item = PRODUCTS.get(key)
+
+    if not item:
+        await query.message.reply_text("Mahsulot topilmadi ❌")
+        return
+
+    CART.setdefault(user_id, [])
+    CART[user_id].append(item)
+    await query.message.reply_text(f"✅ {item['name']} savatchaga qo‘shildi!\n/menu yoki /cart ni bosing.")
+
+# === SAVATCHA ===
+async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    message = query.message if query else update.message
+    user_id = update.effective_user.id
+    items = CART.get(user_id, [])
+
+    if not items:
+        await message.reply_text("🛒 Savatchangiz hozircha bo‘sh. /menu orqali mahsulot tanlang.")
+        return
+
+    total = sum(i["price"] for i in items)
+    text = "\n".join([f"- {i['name']} — {i['price']} so‘m" for i in items])
+    text += f"\n\n💰 Jami: {total} so‘m"
+
+    keyboard = [[InlineKeyboardButton("✅ Buyurtma berish", callback_data="checkout")]]
+    await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# === BUYURTMA ===
+async def checkout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("📍 Iltimos, manzilingizni kiriting:")
+    return ASK_ADDRESS
+
+async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["address"] = update.message.text
+    await update.message.reply_text("📞 Telefon raqamingizni kiriting:")
+    return ASK_PHONE
+
+async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    phone = update.message.text
+    address = context.user_data["address"]
+    items = CART.get(user.id, [])
+    total = sum(i["price"] for i in items)
+
+    order_text = (
+        f"🆕 Yangi buyurtma!\n\n"
+        f"👤 Foydalanuvchi: {user.first_name} (@{user.username})\n"
+        f"📍 Manzil: {address}\n"
         f"📞 Telefon: {phone}\n"
-        f"📦 Mahsulot: {product['name']}\n"
-        f"💰 Narxi: {product['price']} so‘m"
+        f"💰 Jami: {total} so‘m\n\n"
+        "🛒 Buyurtma tarkibi:\n"
     )
-    await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=msg)
-    await update.message.reply_text("✅ Buyurtmangiz qabul qilindi! Tez orada bog‘lanamiz.")
+    for i in items:
+        order_text += f"- {i['name']} — {i['price']} so‘m\n"
 
-# === Botni ishga tushirish ===
+    # Adminga yuborish
+    await context.bot.send_message(chat_id=ADMIN_ID, text=order_text)
+    # Foydalanuvchiga javob
+    await update.message.reply_text("✅ Buyurtmangiz qabul qilindi!\nAdminimiz siz bilan tez orada bog‘lanadi 😊")
+
+    CART[user.id] = []  # Savatchani tozalash
+    return ConversationHandler.END
+
+# === ASOSIY QISM ===
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(checkout_callback, pattern="^checkout$")],
+        states={
+            ASK_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
+            ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
+        },
+        fallbacks=[],
+    )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, phone_handler))
+    app.add_handler(CommandHandler("menu", menu))
+    app.add_handler(CommandHandler("cart", show_cart))
+    app.add_handler(CallbackQueryHandler(menu_callback, pattern="^(?!add_).+"))
+    app.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_"))
+    app.add_handler(conv_handler)
 
+    print("✅ Bot ishga tushdi. Telegram’da /start yozing.")
     app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
+
 
 if __name__ == "__main__":
     main()
