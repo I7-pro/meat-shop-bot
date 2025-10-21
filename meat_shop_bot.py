@@ -35,7 +35,7 @@ PRODUCTS = {
 }
 
 # Savatcha
-CART = {}
+SAVATCHA = {}
 ASK_ADDRESS, ASK_PHONE = range(2)
 
 # === START ===
@@ -44,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🫶 Assalomu alaykum!\n"
         "Bizning go‘sht va fastfood do‘konimizga xush kelibsiz!\n\n"
         "🍖 /menu - Mahsulotlar\n"
-        "🛒 /cart - Savatchani ko‘rish"
+        "🛒 /savatcha - Savatchani ko‘rish"
     )
     await update.message.reply_text(text)
 
@@ -59,7 +59,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🛒 Savatchani ko‘rish", callback_data="cart")])
+    keyboard.append([InlineKeyboardButton("🛒 Savatchani ko‘rish", callback_data="savatcha")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Quyidagi mahsulotlardan tanlang:", reply_markup=reply_markup)
 
@@ -69,8 +69,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
 
-    if query.data == "cart":
-        await show_cart(update, context)
+    if query.data == "savatcha":
+        await show_savatcha(update, context)
         return
 
     item = PRODUCTS.get(query.data)
@@ -83,7 +83,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_photo(photo=item["img"], caption=caption, reply_markup=InlineKeyboardMarkup(keyboard))
 
 # === SAVATCHAGA QO‘SHISH ===
-async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_to_savatcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -94,16 +94,16 @@ async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Mahsulot topilmadi ❌")
         return
 
-    CART.setdefault(user_id, [])
-    CART[user_id].append(item)
-    await query.message.reply_text(f"✅ {item['name']} savatchaga qo‘shildi!\n/menu yoki /cart ni bosing.")
+    SAVATCHA.setdefault(user_id, [])
+    SAVATCHA[user_id].append(item)
+    await query.message.reply_text(f"✅ {item['name']} savatchaga qo‘shildi!\n/menu yoki /savatcha ni bosing.")
 
 # === SAVATCHA ===
-async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_savatcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     message = query.message if query else update.message
     user_id = update.effective_user.id
-    items = CART.get(user_id, [])
+    items = SAVATCHA.get(user_id, [])
 
     if not items:
         await message.reply_text("🛒 Savatchangiz hozircha bo‘sh. /menu orqali mahsulot tanlang.")
@@ -132,7 +132,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     phone = update.message.text
     address = context.user_data["address"]
-    items = CART.get(user.id, [])
+    items = SAVATCHA.get(user.id, [])
     total = sum(i["price"] for i in items)
 
     order_text = (
@@ -151,7 +151,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Foydalanuvchiga javob
     await update.message.reply_text("✅ Buyurtmangiz qabul qilindi!\nAdminimiz siz bilan tez orada bog‘lanadi 😊")
 
-    CART[user.id] = []  # Savatchani tozalash
+    SAVATCHA[user.id] = []  # Savatchani tozalash
     return ConversationHandler.END
 
 # === ASOSIY QISM ===
@@ -169,9 +169,9 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu))
-    app.add_handler(CommandHandler("cart", show_cart))
+    app.add_handler(CommandHandler("savatcha", show_savatcha))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^(?!add_).+"))
-    app.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_"))
+    app.add_handler(CallbackQueryHandler(add_to_savatcha, pattern="^add_"))
     app.add_handler(conv_handler)
 
     print("✅ Bot ishga tushdi. Telegram’da /start yozing.")
@@ -179,8 +179,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-
-
-if __name__ == "__main__":
+    print("✅ Bot ishga tushdi. Telegram’da /start yozing.")
     main()
