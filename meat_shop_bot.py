@@ -3,10 +3,11 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     ContextTypes
 )
+import asyncio
 
 # === Sozlamalar ===
-BOT_TOKEN = "8391288484:AAEKfIE8Ptr6OviApiVa7jaPlxUT6nzjriQ"  # 🔹 O'zingizning bot tokeningizni yozing
-ADMIN_ID = 649076501  # 🔹 Admin Telegram ID
+BOT_TOKEN = "649076501"  # O'zingizning bot tokeningizni yozing
+ADMIN_ID = 649076501  # Admin Telegram ID
 
 # === Mahsulotlar ro‘yxati ===
 PRODUCTS = {
@@ -27,14 +28,13 @@ PRODUCTS = {
     "sosiska_kab": {"name": "Sasiska tovuq (kg)", "price": 70000, "img": "https://example.com/tovuq_sosiska.jpg"},
 }
 
-# === Foydalanuvchi savatchasi ===
+# Foydalanuvchi savatchasi
 user_carts = {}
 
 # === /start komandasi ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     row = []
-
     for i, (key, product) in enumerate(PRODUCTS.items(), start=1):
         row.append(InlineKeyboardButton(product["name"], callback_data=f"buy_{key}"))
         if i % 3 == 0:
@@ -42,29 +42,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row = []
     if row:
         keyboard.append(row)
-
     keyboard.append([InlineKeyboardButton("🛒 Savatcha", callback_data="cart")])
-
-    await update.message.reply_text(
-        "🍖 Mahsulotni tanlang:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await update.message.reply_text("🍖 Mahsulotni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # === Tugmalarni qayta ishlash ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-
     data = query.data
 
     if data.startswith("buy_"):
         product_id = data.replace("buy_", "")
         product = PRODUCTS[product_id]
-
-        # Savatchaga qo‘shish
         user_carts.setdefault(user_id, []).append(product)
-
         await query.message.reply_text(f"✅ {product['name']} savatchaga qo‘shildi.")
 
     elif data == "cart":
@@ -72,11 +63,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not items:
             await query.message.reply_text("🛒 Savatchangiz bo‘sh.")
             return
-
         total = sum(p["price"] for p in items)
         text = "\n".join([f"• {p['name']} — {p['price']} so‘m" for p in items])
         text += f"\n\n💰 Jami: {total} so‘m"
-
         keyboard = [[InlineKeyboardButton("📦 Buyurtma berish", callback_data="order")]]
         await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -85,12 +74,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not items:
             await query.message.reply_text("Savatchangiz bo‘sh 🛒")
             return
-
         total = sum(p["price"] for p in items)
         order_text = "\n".join([f"• {p['name']} — {p['price']} so‘m" for p in items])
         order_text += f"\n\n💰 Jami: {total} so‘m"
 
-        # 🔹 Adminga xabar
         user = query.from_user
         admin_message = (
             f"📦 *Yangi buyurtma!*\n\n"
@@ -99,21 +86,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{order_text}"
         )
         await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message, parse_mode="Markdown")
-
-        # 🔹 Foydalanuvchiga xabar
         await query.message.reply_text("✅ Buyurtma qabul qilindi!\nAdmin siz bilan tez orada bog‘lanadi.")
         user_carts[user_id] = []  # savatchani tozalash
 
 # === Botni ishga tushirish ===
-async def main():
+def run_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-
     print("🤖 Bot ishga tushdi...")
-    await app.run_polling()
+    app.run_polling(stop_signals=None)
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    try:
+        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0))
+    except RuntimeError:
+        pass
+    run_bot()
