@@ -7,7 +7,7 @@ import asyncio
 
 # === Sozlamalar ===
 BOT_TOKEN = "649076501"  # O'zingizning bot tokeningizni yozing
-ADMIN_ID = 649076501  # Admin Telegram ID
+ADMIN_ID = 7211925485  # Admin Telegram ID
 
 # === Mahsulotlar ro‘yxati ===
 PRODUCTS = {
